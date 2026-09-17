@@ -1,0 +1,55 @@
+- id: 5a78c209-856c-494b-b64f-54974a102307
+  name: 'ADCS: Enumerate Vulnerable Certificate Templates'
+  description: |
+    Enumerate vulnerable AD CS certificate templates and emit per-ESC facts (esc1..esc4 template + CA) for the request abilities to branch on. OS-agnostic: Linux runs certipy find (JSON), Windows runs Certify find /vulnerable (text), and the shared esc_find parser reads either format and emits identical facts.
+
+    Windows executor: Certify.exe is delivered by the Caldera payload system. The executor reads the bytes, immediately deletes the delivered file, writes to a random temp path, and runs Certify as a child process via [Diagnostics.Process]::Start() with stdout/stderr redirected to a second temp file. The temp binary is deleted after the process exits. The parent reads the output file, deletes it, and returns the content for the esc_find parser. This approach was chosen over Assembly.Load/LoadFrom because Process.Start resolves COM interop dependencies (CERTENROLLLib) and handles architecture matching natively, working correctly on both Win10 and Win11.
+
+    Linux: certipy find, JSON output, same fact contract.
+  tactic: discovery
+  technique:
+    attack_id: T1649
+    name: Steal or Forge Authentication Certificates
+  platforms:
+    linux:
+      sh:
+        command: |
+          cd /tmp; rm -f adcs_find_Certipy.json adcs_find.log; certipy find -u '#{esc.domain.user}@#{esc.domain.fqdn}' -p '#{esc.domain.password}' -dc-ip #{esc.domain.dc_ip} -vulnerable -json -output adcs_find >adcs_find.log 2>&1; [ -f /tmp/adcs_find_Certipy.json ] || { echo "ENUMERATION FAILED: certipy find wrote no JSON for '#{esc.domain.user}@#{esc.domain.fqdn}' against DC #{esc.domain.dc_ip}. certipy output follows:" >&2; cat adcs_find.log >&2; exit 1; }; cat /tmp/adcs_find_Certipy.json
+        cleanup: |
+          rm -f /tmp/adcs_find_Certipy.json /tmp/adcs_find.log
+        timeout: 300
+        parsers:
+          plugins.stockpile.app.parsers.esc_find:
+          - source: esc1.template.name
+            edge: issued_by
+            target: esc1.ca.name
+          - source: esc2.template.name
+            edge: issued_by
+            target: esc2.ca.name
+          - source: esc3.template.name
+            edge: issued_by
+            target: esc3.ca.name
+          - source: esc4.template.name
+            edge: issued_by
+            target: esc4.ca.name
+    windows:
+      psh:
+        command: |
+          $cwd=[IO.Directory]::GetCurrentDirectory(); $cp=Join-Path $cwd 'Certify.exe'; $cb=[IO.File]::ReadAllBytes($cp); Remove-Item $cp -Force -EA SilentlyContinue; $bf=[IO.Path]::GetTempFileName(); [IO.File]::WriteAllBytes($bf,$cb); $cb=$null; $tf=[IO.Path]::GetTempFileName(); $j=Start-Job -ScriptBlock {param([string]$bfile,[string[]]$a,[string]$tfile) $psi=New-Object Diagnostics.ProcessStartInfo($bfile,($a -join ' ')); $psi.RedirectStandardOutput=$true; $psi.RedirectStandardError=$true; $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true; $proc=[Diagnostics.Process]::Start($psi); $stdout=$proc.StandardOutput.ReadToEnd(); $proc.WaitForExit(); Remove-Item $bfile -Force -EA SilentlyContinue; [IO.File]::WriteAllText($tfile,$stdout)} -ArgumentList $bf,@('find','/vulnerable','/quiet'),$tf; Wait-Job $j|Out-Null; Remove-Job $j; Remove-Item $bf -Force -EA SilentlyContinue; $out=[IO.File]::ReadAllText($tf); Remove-Item $tf -Force; $out
+        timeout: 300
+        parsers:
+          plugins.stockpile.app.parsers.esc_find:
+          - source: esc1.template.name
+            edge: issued_by
+            target: esc1.ca.name
+          - source: esc2.template.name
+            edge: issued_by
+            target: esc2.ca.name
+          - source: esc3.template.name
+            edge: issued_by
+            target: esc3.ca.name
+          - source: esc4.template.name
+            edge: issued_by
+            target: esc4.ca.name
+        payloads:
+        - Certify.exe
