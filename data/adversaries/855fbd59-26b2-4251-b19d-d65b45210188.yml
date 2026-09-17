@@ -1,0 +1,13 @@
+---
+
+id: 855fbd59-26b2-4251-b19d-d65b45210188
+name: 'ADCS ESC1 to Domain Admin'
+description: |
+  Headline demo. Enumerate vulnerable AD CS templates, exploit ESC1 to request a
+  certificate as the domain administrator, then UnPAC-the-hash to recover the
+  admin NT hash. Clean end-to-end identity-first privilege escalation from a
+  low-priv domain user to domain admin, entirely via certificate abuse.
+atomic_ordering:
+  - 5a78c209-856c-494b-b64f-54974a102307  # ADCS: Enumerate Vulnerable Certificate Templates
+  - eabc40cb-d298-4a93-9c1c-d4897721dfd9  # ADCS ESC1: Request Certificate as Administrator
+  - 991863ce-f186-421f-ad22-4980bc3ab243  # ADCS: Authenticate with Certificate (UnPAC-the-Hash)

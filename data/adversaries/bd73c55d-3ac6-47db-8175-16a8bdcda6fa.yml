@@ -1,0 +1,19 @@
+---
+
+id: bd73c55d-3ac6-47db-8175-16a8bdcda6fa
+name: 'ADCS ESC2 to Domain Admin'
+description: |
+  Single-branch ESC2 demo. Enumerate vulnerable AD CS templates, then exploit
+  ESC2 (Any Purpose EKU) as a two-step enrollment-agent chain: request the
+  any-purpose certificate, use it to enroll on behalf of the domain
+  administrator against esc.target.template, then UnPAC-the-hash to recover the
+  admin NT hash.
+
+  Only the ESC2 branch fires. Note that certipy flags an Any Purpose template as
+  both ESC2 and ESC3, so esc3.template.name will also hold this template's name
+  during the operation. Omitting the ESC3 ability from atomic_ordering keeps that
+  from firing, which is what makes this profile a clean ESC2 test.
+atomic_ordering:
+  - 5a78c209-856c-494b-b64f-54974a102307  # ADCS: Enumerate Vulnerable Certificate Templates
+  - a012ff25-3388-4331-8fdb-cda6e81d7931  # ADCS ESC2: Any-Purpose On-Behalf-Of Administrator
+  - 991863ce-f186-421f-ad22-4980bc3ab243  # ADCS: Authenticate with Certificate (UnPAC-the-Hash)

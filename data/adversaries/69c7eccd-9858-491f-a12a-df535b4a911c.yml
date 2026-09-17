@@ -1,0 +1,20 @@
+id: 69c7eccd-9858-491f-a12a-df535b4a911c
+name: ADCS ESC4 to Domain Admin
+description: 'Single-branch ESC4 demo. MODIFIES AD STATE. Enumerate vulnerable AD
+  CS templates, then exploit ESC4 (dangerous write permissions over the template object):
+  back up the template, rewrite it into an ESC1-vulnerable configuration, enroll a
+  certificate as the domain administrator, then restore the original configuration
+  in cleanup. UnPAC-the-hash recovers the admin NT hash.
+
+
+  Only the ESC4 branch is in the ordering. Because this profile writes to AD and depends
+  on the operation cleanup phase to restore the template, run it only in a lab you
+  own, snapshot the DC first, and confirm the restore with a before/after diff of
+  the template configuration. If the operation is killed without cleanup, the template
+  remains ESC1-vulnerable until restored by hand from the retained /tmp backup.
+
+  '
+atomic_ordering:
+- 5a78c209-856c-494b-b64f-54974a102307
+- f33a18f2-2e34-4431-856f-dafe447bdedc
+- 991863ce-f186-421f-ad22-4980bc3ab243

@@ -1,0 +1,32 @@
+id: 40bdbc64-5355-465d-9fcb-23706757eeb5
+name: ADCS ESC3 to Domain Admin
+description: 'Single-branch ESC3 demo. Enumerate vulnerable AD CS templates, then
+  exploit ESC3 (Certificate Request Agent EKU) as a two-step enrollment-agent chain:
+  request an agent certificate, use it to enroll on behalf of the domain administrator,
+  then UnPAC-the-hash to recover the admin NT hash.
+
+
+  Only the ESC3 ability is in the ordering, so the ESC1 and ESC4 abilities never fire.
+  But expect the ESC3 privesc step to run TWICE, and note that this is correct rather
+  than a bug.
+
+
+  certipy flags a template ESC3 whenever it is enrollment-agent capable, and an Any
+  Purpose EKU template satisfies that test just as a Certificate Request Agent template
+  does (find.py: any_purpose implies enrollment_agent). A lab''s ESC2 template is
+  therefore flagged both ESC2 and ESC3. That leaves two values in esc3.template.name,
+  and Caldera''s planner spawns one link per value. Both succeed, each producing an
+  administrator certificate by a different route, and the auth ability then runs once
+  per certificate.
+
+
+  This is the fact model working as intended: the branch is the fact model, so the
+  operation reflects exactly what certipy detected instead of a hardcoded view of
+  which template should be the ESC3 one. Output filenames embed the template name
+  to keep the two links from overwriting each other.
+
+  '
+atomic_ordering:
+- 5a78c209-856c-494b-b64f-54974a102307
+- 53f2175d-d16d-41c6-bce3-fb573f83ca79
+- 991863ce-f186-421f-ad22-4980bc3ab243
