@@ -1,0 +1,35 @@
+---
+
+id: 7c3d6a1e-1b2c-4f8a-9e5d-2a4b6c8d0f11
+name: 'ADCS ESC Operation'
+facts:
+  # --- domain ---
+  - trait: esc.domain.fqdn
+    value: lab.local
+  - trait: esc.domain.netbios
+    value: LAB
+  - trait: esc.domain.dc_ip
+    value: 10.0.0.10
+
+  # --- certificate authority ---
+  # esc.ca.host MUST be the CA's DNS or NetBIOS NAME, never its IP. certipy uses
+  # this string as the SMB/NetBIOS remote name; an IP here produces
+  # 'The NETBIOS connection with the remote host timed out'.
+  # esc.ca.ip is passed as -target-ip so no DNS lookup for the CA is needed.
+  - trait: esc.ca.host
+    value: CA01.lab.local
+  - trait: esc.ca.ip
+    value: 10.0.0.11
+
+  # --- low-privilege credentials to escalate FROM ---
+  - trait: esc.domain.user
+    value: lowprivuser
+  - trait: esc.domain.password
+    value: 'ChangeMe123!'
+
+  # --- enroll-on-behalf-of target (ESC2 / ESC3 step 2) ---
+  # An ORDINARY client-auth template that the admin cert is issued through.
+  # NOT the vulnerable template. certipy validates on-behalf-of targets against
+  # schema v1 templates, and stock 'User' is schema v1.
+  - trait: esc.target.template
+    value: User
